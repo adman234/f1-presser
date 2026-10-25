@@ -1,0 +1,48 @@
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake gcc-arm-none-eabi libnewlib-arm-none-eabi build-essential
+
+      - name: Fetch Pico SDK
+        run: |
+          git clone --depth 1 --branch 2.1.1 --recurse-submodules --shallow-submodules \
+            https://github.com/raspberrypi/pico-sdk "$RUNNER_TEMP/pico-sdk"
+          echo "PICO_SDK_PATH=$RUNNER_TEMP/pico-sdk" >> "$GITHUB_ENV"
+
+      - name: Build
+        run: |
+          cp "$PICO_SDK_PATH/external/pico_sdk_import.cmake" .
+          cmake -B build
+          cmake --build build -j
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: f1_keyboard.uf2
+          path: build/f1_keyboard.uf2
+
+      # Keep the latest build on the Releases page so it is one click to download.
+      - name: Publish latest release
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --cleanup-tag --yes || true
+          gh release create latest build/f1_keyboard.uf2 \
+            --title "Latest build" \
+            --notes "Drag f1_keyboard.uf2 onto the RPI-RP2 drive (hold BOOT while plugging in)."
